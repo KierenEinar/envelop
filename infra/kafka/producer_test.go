@@ -27,7 +27,7 @@ func TestAsyncKafkaProducer_SendMessage(t *testing.T) {
 func TestMain(m *testing.M) {
 
 	kafkaConfig:= &kafka.KafkaConfig{
-		Address: []string{"localhost:9092"},
+		Address: []string{"10.12.130.92:9092"},
 	}
 
 	producer := kafka.GetProducerInstance()
