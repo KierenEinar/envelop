@@ -3,7 +3,7 @@ package kafka
 func init() {
 
 	//kafkaConfig:= &KafkaConfig{
-	//	Address: []string{"10.12.130.92:9092"},
+	//	Address: []string{"localhost:9092"},
 	//}
 	//
 	//producer := GetProducerInstance()
@@ -14,7 +14,7 @@ func init() {
 	//}
 	//container:= ConcumerContainer{
 	//	ConsumerConfig:ConsumerConfig{
-	//		Address: []string{"10.12.130.92:9092"},
+	//		Address: []string{"localhost:9092"},
 	//		GroupId: "envelop-take",
 	//		Topic: "envelop-take",
 	//	},
