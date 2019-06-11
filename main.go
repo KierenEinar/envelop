@@ -6,6 +6,8 @@ import (
 	"github.com/astaxie/beego"
 	_ "envelop/dao"
 	"github.com/astaxie/beego/logs"
+	_ "envelop/dao"
+	_ "envelop/infra/kafka"
 )
 
 func main() {

@@ -32,6 +32,13 @@ func init() {
 				&controllers.AccountController{},
 			),
 		),
+
+
+		beego.NSNamespace("/envelops",
+			beego.NSInclude(
+				&controllers.EnvelopController{},
+			),
+		),
 	)
 	beego.AddNamespace(ns)
 }

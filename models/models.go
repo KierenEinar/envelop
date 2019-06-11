@@ -79,11 +79,6 @@ func (this * AccountHistory) Valid (v *validation.Validation) {
 		v.SetError("Pattern", "Pattern error")
 	}
 
-	//if AccountHistoryChannelUnionPay == this.Channel && strings.TrimSpace(this.BankNo) == ""  {
-	//	logs.Error("BankNo should not be empty")
-	//	v.SetError("BankNo", "BankNo error")
-	//}
-
 }
 
 type Envelop struct {
@@ -91,11 +86,40 @@ type Envelop struct {
 	UserId uint64 `valid:"Required"`
 	AccountId uint64
 	Amount int64 `valid:"Required;"`
-	Type string `enum: "avg, rand"`
-	Quantity uint8
+	Type string `enum: "AVG, RAND" valid:"Required"`
+	Quantity int64 `valid: "Required"`
 	Version uint64
-	PayChannel string
-	Currency string
+	PayChannel string `valid: "Required"`
+	Currency string `valid:"Required"`
+}
+
+
+func (this *Envelop) Valid (v *validation.Validation) {
+	if this.Amount <= 0 {
+		logs.Error("amount error")
+		v.SetError("Amount", "Amount error")
+	}
+
+	if this.PayChannel != AccountHistoryChannelUnionPay && this.PayChannel != AccountHistoryChannelPlat {
+		logs.Error("PayChannel error")
+		v.SetError("PayChannel", "PayChannel error")
+	}
+
+	if this.Quantity <= 0 {
+		logs.Error("Quantity error")
+		v.SetError("Quantity", "Quantity error")
+	}
+
+	if this.Amount / this.Quantity < 1 {
+		logs.Error("Amount divide Quantity error")
+		v.SetError("Amount / Quantity", "Amount / Quantity error")
+	}
+
+	if this.Type != EnvelopTypeAvg && this.Type != EnvelopTypeRand {
+		logs.Error("Type error")
+		v.SetError("Type", "Type error")
+	}
+
 }
 
 
@@ -161,8 +185,8 @@ var (
 
 //红包类型
 var (
-	EnvelopTypeAvg = "avg"
-	EnvelopTypeRand = "rand"
+	EnvelopTypeAvg = "AVG"
+	EnvelopTypeRand = "RAND"
 )
 
 
@@ -178,5 +202,8 @@ func (*AccountHistory) GenTradeNo () string {
 func (this *AccountHistory) GenDescription () string {
 	prefix := "AccountHistoryDesc"
 	return accountHistoryDesc[prefix + this.Channel + this.Type + this.Pattern]
+}
+func (this *AccountHistory) GenCreateTime() {
+	this.CreateTime = time.Now().Unix()
 }
 

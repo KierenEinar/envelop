@@ -8,7 +8,7 @@ const (
 	ParamErrorCode          = 101
 	EnvelopCreateErrorCode  = 901 //红包创建失败
 	BankBalanceErrorCode    = 1001 // 银行卡扣款失败
-
+	EnvelopNotExistsErrorCode = 902 //红包不存在
 )
 
 

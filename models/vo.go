@@ -1,5 +1,10 @@
 package models
 
+import (
+	"strconv"
+	"time"
+)
+
 type AccountHistoryVO struct {
 	AccountHistory
 	BankNo string
@@ -20,4 +25,21 @@ type AccountTransferVO struct {
 	InBankCode string
 	InBankName string
 	InBankNo string
+}
+
+
+type TakeEnvelopVo struct {
+	UserId uint64 `valid:"Required"`
+	EnvelopTradeNo string `valid:"Required"`
+}
+
+type EnvelopDto struct {
+	TakeEnvelopVo
+	Amount int64
+	CreateTime int64
+	TradeNo string
+}
+
+func (*EnvelopDto) GenTradeNo () string {
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
 }

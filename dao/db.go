@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"envelop/constant"
 	"envelop/models"
+	"envelop/redis"
 	"fmt"
 	"github.com/astaxie/beego/logs"
 	_ "github.com/go-sql-driver/mysql"
@@ -63,6 +64,8 @@ func init () {
 
 	go observeSignal(func() {
 		dataSourceManager.dataSource.Close()
+		err := redis.Client.Close()
+		logs.Info("redis conenct close ... ", err )
 	})
 
 }
@@ -165,6 +168,10 @@ func (this *DataSource ) Close() {
 	if this.ConnectionPool != nil {
 		if this.ConnectionPool.db != nil {
 			this.ConnectionPool.db.Close()
+			log.Print("close db connection ...")
+		}
+		if this.ConnectionPool.orm != nil {
+			this.ConnectionPool.orm.Close()
 			log.Print("close db connection ...")
 		}
 	}
@@ -327,14 +334,14 @@ func (this *AccountHistoryDaoImpl) CreateAccountHistory (tx *sql.Tx, history* mo
 
 
 type EnvelopDao interface {
-	Create (tx *sql.Tx, envelop *models.Envelop) (int64, error)
+	Create (tx *sql.Tx, envelop *models.Envelop) (error)
 }
 
 type EnvelopDaoImpl struct {
 	BaseDao
 }
 
-func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (int64, error) {
+func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (error) {
 	//orm:= this.GetPool().orm
 	//db:= orm.Create(envelop)
 	//return db.RowsAffected, db.Error
@@ -344,7 +351,7 @@ func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (int64
 
 	args:=make([]interface{}, 0)
 
-	args=append(args, envelop.UserId, envelop.AccountId, envelop.CreateTime, envelop.Amount, envelop.Type, envelop.Quantity, envelop.Version)
+	args=append(args, envelop.UserId, envelop.AccountId, envelop.CreateTime, envelop.Amount, envelop.Type, envelop.Quantity, envelop.Version, envelop.PayChannel)
 	sqlInsert := SQLInsert{
 		tx,
 		sql,
@@ -356,7 +363,16 @@ func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (int64
 	}
 
 
-	return this.Insert(&sqlInsert)
+	rows, err:= this.Insert(&sqlInsert)
+
+	if rows == 0 {
+		return &constant.RuntimeError{
+			constant.EnvelopCreateErrorCode,
+			"envelop create failed ... ",
+		}
+	}
+
+	return err
 }
 
 
