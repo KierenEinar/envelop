@@ -8,15 +8,9 @@ import (
 	redisClient "envelop/redis"
 )
 
-var (
-	//envelopRandomStrategy = algo.EnvelopSimpleRandom{}
-	//envelopRandomAfterSuffleStrategy = algo.EnvelopAfterSuffleStrategy{}
-	//envelopRandomDoubleStrategy = algo.EnvelopDoubleAvgStrategy{}
-	envelopService = new (service.EnvelopServiceImpl)
-)
-
 type EnvelopController struct {
 	BaseController
+	EnvelopService *service.EnvelopServiceImpl `inject:""`
 }
 
 
@@ -24,7 +18,7 @@ type EnvelopController struct {
 func (this * EnvelopController) Create () {
 	var envelop models.Envelop
 	json.Unmarshal(this.Ctx.Input.RequestBody, &envelop)
-	orderNo, err:= envelopService.CreateEnvelop(&envelop)
+	orderNo, err:= this.EnvelopService.CreateEnvelop(&envelop)
 	this.apiResponse(0, err, orderNo)
 }
 
@@ -32,7 +26,7 @@ func (this * EnvelopController) Create () {
 func (this * EnvelopController) Take () {
 	var takeEnvelopVo models.TakeEnvelopVo
 	json.Unmarshal(this.Ctx.Input.RequestBody, &takeEnvelopVo)
-	envelop, err:= envelopService.TakeEnvelop(takeEnvelopVo)
+	envelop, err:= this.EnvelopService.TakeEnvelop(takeEnvelopVo)
 	this.apiResponse(0, err, envelop)
 }
 

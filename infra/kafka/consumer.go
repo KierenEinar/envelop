@@ -1,7 +1,11 @@
 package kafka
 
 import (
+	"errors"
+	"github.com/Shopify/sarama"
+	"github.com/astaxie/beego/logs"
 	"github.com/bsm/sarama-cluster"
+	"log"
 )
 
 type ConsumerConfig struct {
@@ -43,12 +47,26 @@ type ConcumerContainer struct {
 
 func (container*ConcumerContainer) Start ()  error {
 
-	consumer, err:=cluster.NewConsumer(container.ConsumerConfig.Address, container.ConsumerConfig.GroupId, container.ConsumerConfig.Address, container.config())
+	consumer, err:=cluster.NewConsumer(container.ConsumerConfig.Address, container.ConsumerConfig.GroupId, []string{container.ConsumerConfig.Topic}, container.config())
 
 	if err != nil {
 		return err
 	}
 	container.consumer = *consumer
+
+	go func() {
+		for err := range consumer.Errors() {
+			log.Printf("%s:Error: %s\n", container.ConsumerConfig.GroupId, err.Error())
+		}
+	}()
+
+	// consume notifications
+	go func() {
+		for ntf := range consumer.Notifications() {
+			log.Printf("%s:Rebalanced: %+v \n", container.ConsumerConfig.GroupId, ntf)
+		}
+	}()
+
 	return nil
 }
 
@@ -58,30 +76,34 @@ func (this *ConcumerContainer) Shutdown () error {
 
 func (this *ConcumerContainer) config () *cluster.Config {
 	config:=cluster.NewConfig()
+	config.Consumer.Return.Errors = true
+	config.Group.Return.Notifications = true
 	config.Group.Mode = cluster.ConsumerModePartitions
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 	return config
 }
 
 func handlerMessageListener (consumer cluster.Consumer, messageListener MessageListener) error {
 
 	for {
-
 		select {
-		case part, _ := <-consumer.Partitions():
-			go func(pc cluster.PartitionConsumer) {
+		case part, ok := <-consumer.Partitions():
+			if !ok {
+				return errors.New("partition not ok")
+			}
+			logs.Info("partirion", part)
+			logs.Info("ok", ok)
 
-				for {
-					select {
-						case message:= <-pc.Messages():
-							messageListener.OnListening(message.Topic ,string(message.Value), nil)
-						case err:= <-pc.Errors():
-							messageListener.OnListening(err.Topic, "", err.Err)
-					}
+			go func(pc cluster.PartitionConsumer) {
+				for msg:= range pc.Messages() {
+					logs.Info("msg->", msg.Topic)
+					messageListener.OnListening(msg.Topic, string(msg.Value), nil)
+					consumer.MarkOffset(msg, "")
 				}
 
 			}(part)
 		}
-
 	}
+
 
 }

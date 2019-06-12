@@ -9,6 +9,8 @@ const (
 	EnvelopCreateErrorCode  = 901 //红包创建失败
 	BankBalanceErrorCode    = 1001 // 银行卡扣款失败
 	EnvelopNotExistsErrorCode = 902 //红包不存在
+	EnvelopTakePendingErrorCode = 961 //红包抢到了, 但是正在入库, 需要前端调用查询红包接口
+	EnvelopRunDownErrorCode = 971 //红包抢完了
 )
 
 

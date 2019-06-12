@@ -7,6 +7,7 @@ import (
 	"envelop/redis"
 	"fmt"
 	"github.com/astaxie/beego/logs"
+	"github.com/facebookgo/inject"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -70,7 +71,15 @@ func init () {
 
 }
 
-
+func MustInit (g *inject.Graph) {
+	g.Provide(
+		&inject.Object{Value: &UserDaoImpl{}},
+		&inject.Object{Value: &AccountDaoImpl{}},
+		&inject.Object{Value: &AccountHistoryDaoImpl{}},
+		&inject.Object{Value: &AccountBankTransferHistoryDaoImpl{}},
+		&inject.Object{Value: &EnvelopDaoImpl{}},
+		)
+}
 
 func (this * DataSourceManager) initDataSource () error {
 

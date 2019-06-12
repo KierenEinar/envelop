@@ -112,6 +112,7 @@ func (this *AsyncKafkaProducer) Config () *sarama.Config {
 	config.Producer.Partitioner = sarama.NewRandomPartitioner
 	config.Producer.Return.Successes = true
 	config.Producer.Return.Errors = true
+	config.Version = sarama.V0_10_0_1
 	return config
 }
 

@@ -13,32 +13,42 @@ import (
 	"github.com/astaxie/beego"
 )
 
-func init() {
+type Router struct {
+	UserController *controllers.UserController `inject:""`
+	AccountController *controllers.AccountController `inject:""`
+	EnvelopController *controllers.EnvelopController `inject:""`
+	ObjectController *controllers.ObjectController `inject:""`
+}
+
+func (this *Router) RegisterRouter() {
 	ns := beego.NewNamespace("/api/v1",
 		beego.NSNamespace("/object",
 			beego.NSInclude(
-				&controllers.ObjectController{},
+				this.ObjectController,
 			),
 		),
 
 		beego.NSNamespace("/users",
 			beego.NSInclude(
-				&controllers.UserController{},
+				this.UserController,
 			),
 		),
 
 		beego.NSNamespace("/accounts",
 			beego.NSInclude(
-				&controllers.AccountController{},
+				this.AccountController,
 			),
 		),
 
 
 		beego.NSNamespace("/envelops",
 			beego.NSInclude(
-				&controllers.EnvelopController{},
+				this.EnvelopController,
 			),
 		),
 	)
 	beego.AddNamespace(ns)
 }
+
+
+

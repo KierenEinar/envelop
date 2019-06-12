@@ -13,9 +13,6 @@ import (
 )
 
 var (
-	accountDao = new (dao.AccountDaoImpl)
-	accountHistoryDao = new (dao.AccountHistoryDaoImpl)
-	accountBankTransferHistoryDao = new (dao.AccountBankTransferHistoryDaoImpl)
 	once = sync.Once{}
 	transferFactory *TransferFactory
 )
@@ -30,7 +27,16 @@ type AccountService interface {
 	UpdateBankBalance (tx *sql.Tx, accountHistory *models.AccountHistoryVO, inAccountId uint64, outAccountId uint64) error
 }
 
-type AccountServiceImpl struct {}
+type AccountServiceImpl struct {
+	UserDao *dao.UserDaoImpl `inject:""`
+	AccountDao *dao.AccountDaoImpl `inject:""`
+	AccountHistoryDao *dao.AccountHistoryDaoImpl `inject:""`
+	AccountBankTransferHistoryDao *dao.AccountBankTransferHistoryDaoImpl `inject:""`
+	TransferStrategyPlat2Plat *TransferStrategyPlat2Plat `inject:""`
+	TransferStrategyPlat2UnionPay *TransferStrategyPlat2UnionPay `inject:""`
+	TransferStrategyUnionPay2UnionPay *TransferStrategyUnionPay2UnionPay `inject:""`
+	TransferStrategyUnionPay2Plat * TransferStrategyUnionPay2Plat `inject:""`
+}
 
 func (this *AccountServiceImpl) CreateAccount (account *models.Account) (int64, error) {
 	json, err := json.Marshal(account)
@@ -44,12 +50,12 @@ func (this *AccountServiceImpl) CreateAccount (account *models.Account) (int64, 
 	account.UpdateTime = now.Unix()
 
 
-	user, err := userDao.FindUser(account.UserId)
+	user, err := this.UserDao.FindUser(account.UserId)
 	if err != nil {
 		return 0, err
 	}
 	account.NickName = user.NickName
-	rows, err := accountDao.CreateAccount(account)
+	rows, err := this.AccountDao.CreateAccount(account)
 	if rows == 0 || err != nil {
 		return rows, &constant.RuntimeError{constant.AccountCreateErrorCode, "account create failed ..."}
 	}
@@ -74,7 +80,7 @@ func (this *AccountServiceImpl) UpdateBalanceByRecharge (accountHistoryVO * mode
 		return err
 	}
 
-	return accountDao.Tx(func(tx *sql.Tx) error {
+	return this.AccountDao.Tx(func(tx *sql.Tx) error {
 		err:=this.UpdateBalance(tx, accountHistory)
 		if err != nil {
 			tx.Rollback()
@@ -107,7 +113,7 @@ func (this *AccountServiceImpl) UpdateBalanceByWithdraw (accountHistoryVO * mode
 		return err
 	}
 	accountHistory.Amount = 0 - accountHistory.Amount
-	return accountDao.Tx(func(tx *sql.Tx) error {
+	return this.AccountDao.Tx(func(tx *sql.Tx) error {
 		err:=this.UpdateBalance(tx, accountHistory)
 		if err != nil {
 			tx.Rollback()
@@ -152,7 +158,7 @@ func (this *AccountServiceImpl) UpdateBalanceByTransfer (accountTransferVO * mod
 
 	key := accountTransferVO.Channel + "2" + accountTransferVO.InChannel
 
-	instance:= transferFactoryInstance()
+	instance:= this.transferFactoryInstance()
 
 	strategy:= instance.GetStrategy(key)
 
@@ -179,7 +185,7 @@ func (this *AccountServiceImpl) UpdateBalanceByTransfer (accountTransferVO * mod
 //修改账户余额
 func (this *AccountServiceImpl) UpdateBalance (tx *sql.Tx ,accountHistory * models.AccountHistory) error {
 
-	accountId, error:= accountDao.FindIdByUserId (tx, accountHistory.UserId)
+	accountId, error:= this.AccountDao.FindIdByUserId (tx, accountHistory.UserId)
 
 	if error != nil {
 		return error
@@ -187,7 +193,7 @@ func (this *AccountServiceImpl) UpdateBalance (tx *sql.Tx ,accountHistory * mode
 
 	accountHistory.AccountId = accountId
 
-	res, err:= accountDao.UpdateAccountBalance(tx, accountHistory.UserId, accountHistory.Amount)
+	res, err:= this.AccountDao.UpdateAccountBalance(tx, accountHistory.UserId, accountHistory.Amount)
 
 	logs.Info("update account, rows", res, ", err", err)
 	if res == 0 || err!=nil {
@@ -195,7 +201,7 @@ func (this *AccountServiceImpl) UpdateBalance (tx *sql.Tx ,accountHistory * mode
 			constant.AccountBalanceErrorCode, "update account balance failed ... "}
 	}
 
-	res, err = accountHistoryDao.CreateAccountHistory(tx, accountHistory)
+	res, err = this.AccountHistoryDao.CreateAccountHistory(tx, accountHistory)
 	logs.Info("insert account_history, rows", res, ", err", err)
 	if res == 0 || err!=nil {
 		return &constant.RuntimeError{
@@ -223,7 +229,7 @@ func (this *AccountServiceImpl) UpdateBankBalance (tx *sql.Tx, accountHistory *m
 	accountBankTransferHistory.OutAccountId = outAccountId
 	accountBankTransferHistory.CreateTime = accountHistory.CreateTime
 	accountBankTransferHistory.BankName = accountHistory.BankName
-	rows, err := accountBankTransferHistoryDao.Create(tx, accountBankTransferHistory)
+	rows, err := this.AccountBankTransferHistoryDao.Create(tx, accountBankTransferHistory)
 	if rows == 0 || err != nil {
 		return &constant.RuntimeError{
 			constant.BankBalanceErrorCode,
@@ -314,7 +320,7 @@ func (this *AccountServiceImpl) validTransfer (vo *models.AccountTransferVO) err
 
 	key := vo.Channel + "2" + vo.InChannel
 
-	instance:= transferFactoryInstance()
+	instance:= this.transferFactoryInstance()
 
 	strategy:= instance.GetStrategy(key)
 
@@ -343,7 +349,9 @@ type TransferStrategy interface {
 	Transfer (vo models.AccountTransferVO, accountService AccountService) error
 }
 
-type TransferStrategyPlat2UnionPay struct {}
+type TransferStrategyPlat2UnionPay struct {
+	AccountDao *dao.AccountDaoImpl `inject:""`
+}
 
 func (this *TransferStrategyPlat2UnionPay) Valid(vo models.AccountTransferVO) error {
 	//平台->银行转账
@@ -394,14 +402,14 @@ func (this *TransferStrategyPlat2UnionPay) Transfer(accountTransferVO models.Acc
 	inAccountHistoery.BankNo = accountTransferVO.InBankNo
 
 
-	return accountDao.Tx(func(tx *sql.Tx) error {
+	return this.AccountDao.Tx(func(tx *sql.Tx) error {
 		err := accountService.UpdateBalance(tx, outAccountHistory)
 		if err != nil {
 			tx.Rollback()
 			return nil
 		}
 
-		inAccountId, err := accountDao.FindIdByUserId(tx, inAccountHistoery.UserId)
+		inAccountId, err := this.AccountDao.FindIdByUserId(tx, inAccountHistoery.UserId)
 
 		if err != nil {
 			tx.Rollback()
@@ -422,7 +430,9 @@ func (this *TransferStrategyPlat2UnionPay) Transfer(accountTransferVO models.Acc
 
 }
 
-type TransferStrategyPlat2Plat struct {}
+type TransferStrategyPlat2Plat struct {
+	AccountDao *dao.AccountDaoImpl `inject:""`
+}
 
 func (this *TransferStrategyPlat2Plat) Valid (vo models.AccountTransferVO) error {
 	//平台->平台转账
@@ -458,7 +468,7 @@ func (this *TransferStrategyPlat2Plat) Transfer(accountTransferVO models.Account
 	inAccountHistory.UserId = accountTransferVO.InUserId
 
 
-	return accountDao.Tx(func(tx *sql.Tx) error {
+	return this.AccountDao.Tx(func(tx *sql.Tx) error {
 		err:= accountService.UpdateBalance(tx, outAccountHistory)
 		if err != nil {
 			tx.Rollback()
@@ -478,7 +488,9 @@ func (this *TransferStrategyPlat2Plat) Transfer(accountTransferVO models.Account
 
 }
 
-type TransferStrategyUnionPay2Plat struct {}
+type TransferStrategyUnionPay2Plat struct {
+	AccountDao *dao.AccountDaoImpl `inject:""`
+}
 
 func (this *TransferStrategyUnionPay2Plat) Valid (vo models.AccountTransferVO) error {
 
@@ -526,7 +538,7 @@ func (this *TransferStrategyUnionPay2Plat) Transfer(accountTransferVO models.Acc
 	outAccountHistory.BankName = accountTransferVO.BankName
 
 	outAccountHistory.Description = outAccountHistory.GenDescription()
-	return accountDao.Tx(func(tx *sql.Tx) error {
+	return this.AccountDao.Tx(func(tx *sql.Tx) error {
 		 err := accountService.UpdateBalance(tx, inAccountHistory)
 		 if err != nil {
 		 	tx.Rollback()
@@ -534,7 +546,7 @@ func (this *TransferStrategyUnionPay2Plat) Transfer(accountTransferVO models.Acc
 		 }
 
 
-		outAccountId, err := accountDao.FindIdByUserId(tx, outAccountHistory.UserId)
+		outAccountId, err := this.AccountDao.FindIdByUserId(tx, outAccountHistory.UserId)
 
 		if err != nil {
 			tx.Rollback()
@@ -586,14 +598,14 @@ func (this *TransferFactory) GetStrategy (name string) TransferStrategy {
 }
 
 
-func transferFactoryInstance () *TransferFactory  {
+func (this *AccountServiceImpl) transferFactoryInstance () *TransferFactory  {
 	once.Do(func() {
 		transferFactory = new(TransferFactory)
 		transferFactory.strategy = make(map[string]TransferStrategy)
-		transferFactory.strategy["Plat2Plat"] = new (TransferStrategyPlat2Plat)
-		transferFactory.strategy["Plat2UnionPay"] = new (TransferStrategyPlat2UnionPay)
-		transferFactory.strategy["UnionPay2Plat"] = new (TransferStrategyUnionPay2Plat)
-		transferFactory.strategy["UnionPay2UnionPay"] = new (TransferStrategyUnionPay2UnionPay)
+		transferFactory.strategy["Plat2Plat"] = this.TransferStrategyPlat2Plat
+		transferFactory.strategy["Plat2UnionPay"] = this.TransferStrategyPlat2UnionPay
+		transferFactory.strategy["UnionPay2Plat"] = this.TransferStrategyUnionPay2Plat
+		transferFactory.strategy["UnionPay2UnionPay"] = this.TransferStrategyUnionPay2UnionPay
 
 	})
 	return transferFactory

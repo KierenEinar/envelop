@@ -9,11 +9,6 @@ import (
 	"reflect"
 )
 
-var (
-	userServie = new (service.UserServiceImpl)
-)
-
-
 type BaseController struct {
 	beego.Controller
 }
@@ -44,19 +39,20 @@ func (this *BaseController) apiResponse(code int, err error, data interface{} ) 
 
 type UserController struct {
 	BaseController
+	UserService *service.UserServiceImpl `inject:""`
 }
 
 // @router / [post]
 func (this *UserController) CreateOne () {
 	var user* models.User
 	json.Unmarshal(this.Ctx.Input.RequestBody, &user)
-	result, err := userServie.CreateUser(user)
+	result, err := this.UserService.CreateUser(user)
 	this.apiResponse(0, err, result)
 }
 
 // @router /:id [get]
 func (this *UserController) FindOne () {
 	id, err := this.GetInt(":id")
-	data, err := userServie.FindOne (uint64(id))
+	data, err := this.UserService.FindOne (uint64(id))
 	this.apiResponse(0, err, data)
 }

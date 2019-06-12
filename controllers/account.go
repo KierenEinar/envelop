@@ -9,11 +9,8 @@ import (
 
 type AccountController struct {
 	BaseController
+	AccountService *service.AccountServiceImpl `inject:""`
 }
-
-var (
-	accountService = new (service.AccountServiceImpl)
-)
 
 // @router / [post]
 func (this *AccountController) CreateOne () {
@@ -21,7 +18,7 @@ func (this *AccountController) CreateOne () {
 	json.Unmarshal(this.Ctx.Input.RequestBody, &account)
 
 	logs.Info("create account, ", string(this.Ctx.Input.RequestBody))
-	res, error := accountService.CreateAccount(account)
+	res, error := this.AccountService.CreateAccount(account)
 	this.apiResponse(0, error, res)
 }
 
@@ -31,7 +28,7 @@ func (this *AccountController) UpdateBalanceByRecharge () {
 	var accountHistoryVO *models.AccountHistoryVO
 	json.Unmarshal(this.Ctx.Input.RequestBody, &accountHistoryVO)
 	logs.Info("create account_log, ", string(this.Ctx.Input.RequestBody))
-	error :=accountService.UpdateBalanceByRecharge(accountHistoryVO)
+	error := this.AccountService.UpdateBalanceByRecharge(accountHistoryVO)
 	this.apiResponse(0, error, nil)
 }
 
@@ -43,7 +40,7 @@ func (this *AccountController) UpdateBalanceByWithdraw () {
 	var accountHistoryVO *models.AccountHistoryVO
 	json.Unmarshal(this.Ctx.Input.RequestBody, &accountHistoryVO)
 	logs.Info("create account_log, ", string(this.Ctx.Input.RequestBody))
-	error :=accountService.UpdateBalanceByWithdraw(accountHistoryVO)
+	error :=this.AccountService.UpdateBalanceByWithdraw(accountHistoryVO)
 	this.apiResponse(0, error, nil)
 }
 
@@ -54,6 +51,6 @@ func (this *AccountController) UpdateBalanceByTransfer () {
 	var accountTransferVO *models.AccountTransferVO
 	json.Unmarshal(this.Ctx.Input.RequestBody, &accountTransferVO)
 	logs.Info("create account_log, ", string(this.Ctx.Input.RequestBody))
-	error :=accountService.UpdateBalanceByTransfer(accountTransferVO)
+	error := this.AccountService.UpdateBalanceByTransfer(accountTransferVO)
 	this.apiResponse(0, error, nil)
 }
