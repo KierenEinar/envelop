@@ -1,12 +1,12 @@
-package kafka
+package service
 
 import (
 	"github.com/astaxie/beego/logs"
 )
 
 type EnvelopTakeListener struct {
-	//accountService *service.AccountService 	`inject:""`
-	//envelopService service.EnvelopService `inject:""`
+	accountService *AccountServiceImpl	`inject:""`
+	envelopService *EnvelopServiceImpl `inject:""`
 }
 
 func (this *EnvelopTakeListener) OnListening (topic string ,body string, err error) {
