@@ -1,12 +1,11 @@
 package kafka
 
 import (
-	"envelop/constant"
 	"github.com/astaxie/beego/logs"
+	"github.com/facebookarchive/inject"
 )
 
-func init() {
-
+func MustInit (g *inject.Graph) {
 	kafkaConfig:= &KafkaConfig{
 		Address: []string{"localhost:9092"},
 	}
@@ -17,22 +16,8 @@ func init() {
 		logs.Error("producer start failed %v", err)
 		panic(err)
 	}
-	container:= ConcumerContainer{
-		ConsumerConfig:ConsumerConfig{
-			Address: []string{"localhost:9092"},
-			GroupId: "envelop-group",
-			Topic: constant.ENVELOPTAKETOPIC,
-		},
-		MessageListener: new(EnvelopTakeListener),
-	}
-	containers:=make([]ConcumerContainer, 0)
-	containers = append(containers, container)
-	err = RegisterContainer(containers)
-	if err != nil {
-		logs.Error("register consumer failed ..., %v", err)
-		panic(err)
-	}
 
-	logs.Info("kafka all consumer start success ...")
-
+	g.Provide(
+		&inject.Object{Value: producer},
+	)
 }

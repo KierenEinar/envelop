@@ -31,6 +31,9 @@ type AccountTransferVO struct {
 type TakeEnvelopVo struct {
 	UserId uint64 `valid:"Required"`
 	EnvelopTradeNo string `valid:"Required"`
+	EnvelopId uint64 `valid:"Required"`
+	OutAccountHistory *AccountHistory
+	InAccountHistory *AccountHistory
 }
 
 type EnvelopDto struct {
@@ -42,4 +45,10 @@ type EnvelopDto struct {
 
 func (*EnvelopDto) GenTradeNo () string {
 	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+
+
+type EnvelopCreateVo struct {
+	 EnvelopId uint64 `json:"envelop_id"`
+	 TradeNo   string `json:"trade_no"`
 }

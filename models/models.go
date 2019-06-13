@@ -91,7 +91,19 @@ type Envelop struct {
 	Version uint64
 	PayChannel string `valid: "Required"`
 	Currency string `valid:"Required"`
+	TradeNo int64
 }
+
+type EnvelopItem struct {
+	Model
+	UserId uint64 `gorm:"column:user_id"`
+	AccountId uint64 `gorm:"column:account_id"`
+	EnvelopId uint64 `gorm:"column:envelop_id"`
+	Amount int64 	`gorm:"column:amount"`
+	Status string 	`gorm:"column:status"`
+	TradeNo int64   `gorm:"column:trade_no"`
+}
+
 
 
 func (this *Envelop) Valid (v *validation.Validation) {
@@ -207,3 +219,6 @@ func (this *AccountHistory) GenCreateTime() {
 	this.CreateTime = time.Now().Unix()
 }
 
+func (*Model) GenTradeNo () string {
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}

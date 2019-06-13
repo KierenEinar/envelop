@@ -18,15 +18,15 @@ type EnvelopController struct {
 func (this * EnvelopController) Create () {
 	var envelop models.Envelop
 	json.Unmarshal(this.Ctx.Input.RequestBody, &envelop)
-	orderNo, err:= this.EnvelopService.CreateEnvelop(&envelop)
-	this.apiResponse(0, err, orderNo)
+	data, err:= this.EnvelopService.CreateEnvelop(&envelop)
+	this.apiResponse(0, err, data)
 }
 
 // @router /take [post]
 func (this * EnvelopController) Take () {
 	var takeEnvelopVo models.TakeEnvelopVo
 	json.Unmarshal(this.Ctx.Input.RequestBody, &takeEnvelopVo)
-	envelop, err:= this.EnvelopService.TakeEnvelop(takeEnvelopVo)
+	envelop, err:= this.EnvelopService.TakeEnvelopNew(&takeEnvelopVo)
 	this.apiResponse(0, err, envelop)
 }
 

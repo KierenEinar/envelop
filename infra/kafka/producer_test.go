@@ -29,29 +29,29 @@ func TestAsyncKafkaProducer_SendMessage(t *testing.T) {
 	time.Sleep(duration)
 }
 
-func TestEnvelopTakeListener_OnListeningst(t *testing.T) {
-	container:= kafka.ConcumerContainer{
-		ConsumerConfig:kafka.ConsumerConfig{
-			Address: []string{"localhost:9092"},
-			GroupId: "group1",
-			Topic: "envelop-take",
-		},
-		MessageListener: new(kafka.EnvelopTakeListener),
-	}
-	containers:=make([]kafka.ConcumerContainer, 0)
-	containers = append(containers, container)
-	err := kafka.RegisterContainer(containers)
-	if err != nil {
-		logs.Error("register consumer failed ..., %v", err)
-		panic(err)
-	}
-
-	logs.Info("kafka all consumer start success ...")
-
-	duration,_:=time.ParseDuration("10s")
-
-	time.Sleep(duration)
-}
+//func TestEnvelopTakeListener_OnListeningst(t *testing.T) {
+//	container:= kafka.ConcumerContainer{
+//		ConsumerConfig:kafka.ConsumerConfig{
+//			Address: []string{"localhost:9092"},
+//			GroupId: "group1",
+//			Topic: "envelop-take",
+//		},
+//		MessageListener: new(kafka.EnvelopTakeListener),
+//	}
+//	containers:=make([]kafka.ConcumerContainer, 0)
+//	containers = append(containers, container)
+//	err := kafka.RegisterContainer(containers)
+//	if err != nil {
+//		logs.Error("register consumer failed ..., %v", err)
+//		panic(err)
+//	}
+//
+//	logs.Info("kafka all consumer start success ...")
+//
+//	duration,_:=time.ParseDuration("10s")
+//
+//	time.Sleep(duration)
+//}
 
 func TestMain(m *testing.M) {
 

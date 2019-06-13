@@ -3,12 +3,11 @@ package main
 import (
 	"envelop/controllers"
 	"envelop/dao"
-	_ "envelop/infra/kafka"
 	"envelop/routers"
 	"envelop/service"
 	"github.com/astaxie/beego"
 	"github.com/astaxie/beego/logs"
-	"github.com/facebookgo/inject"
+	"github.com/facebookarchive/inject"
 	"log"
 )
 

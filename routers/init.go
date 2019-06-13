@@ -1,7 +1,7 @@
 package routers
 
 import (
-	"github.com/facebookgo/inject"
+	"github.com/facebookarchive/inject"
 )
 
 func MustInit(g *inject.Graph) *Router {

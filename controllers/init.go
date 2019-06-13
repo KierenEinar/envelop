@@ -1,6 +1,6 @@
 package controllers
 
-import "github.com/facebookgo/inject"
+import "github.com/facebookarchive/inject"
 
 func MustInit (g *inject.Graph) {
 	g.Provide(

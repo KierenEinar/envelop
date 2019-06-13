@@ -7,6 +7,7 @@ import (
 	"envelop/dao"
 	"envelop/infra/algo"
 	"envelop/infra/kafka"
+	"envelop/infra/util"
 	"envelop/models"
 	redisClient "envelop/redis"
 	"fmt"
@@ -19,11 +20,10 @@ import (
 
 const (
 	ENVELOPTAKEPENDING = "pending"
-	ENVELOPTAKETOPIC = "envelop-take"
 )
 
 type EnvelopService interface {
-	CreateEnvelop (envelop * models.Envelop) (*string, error) //发红包
+	CreateEnvelop (envelop * models.Envelop) (uint64, string, error) //发红包
 	TakeEnvelop (models.TakeEnvelopVo) (*models.EnvelopDto, error) //抢红包
 	TakeEnvelopNew (models.TakeEnvelopVo) (*models.EnvelopDto, error) //抢红包, 新版本
 }
@@ -33,12 +33,13 @@ var (
 )
 
 type EnvelopServiceImpl struct {
-
 	AccountService *AccountServiceImpl `inject:""`
 	EnvelopDao *dao.EnvelopDaoImpl `inject:""`
+	EnvelopItemDao *dao.EnvelopItemDaoImpl `inject:""`
+	AsyncKafkaProducer *kafka.AsyncKafkaProducer `inject:""`
 }
 
-func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string, error) {
+func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models.EnvelopCreateVo ,error) {
 
 	/**
 	(1)如果是支付方式是平台，则扣款
@@ -53,7 +54,10 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string
 
 	if err != nil || !b {
 		logs.Error("validate error ,", err, "bool ,", b)
-		return nil, &constant.RuntimeError{
+		return &models.EnvelopCreateVo{
+			0,
+			"",
+		}, &constant.RuntimeError{
 			constant.ParamErrorCode,
 			"param error",
 		}
@@ -61,10 +65,11 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string
 
 	var key string
 
+	var outAccountHistory models.AccountHistory
+
 	err = this.EnvelopDao.Tx(func(tx *sql.Tx) error {
 
 		if envelop.PayChannel == models.AccountHistoryChannelPlat {
-			outAccountHistory := new (models.AccountHistory)
 			outAccountHistory.Amount = 0 - envelop.Amount
 			outAccountHistory.UserId = envelop.UserId
 			outAccountHistory.GenCreateTime()
@@ -75,7 +80,7 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string
 			tradeNo := outAccountHistory.GenTradeNo()
 			outAccountHistory.TradeNo = tradeNo
 			outAccountHistory.Description = outAccountHistory.GenDescription()
-			err := this.AccountService.UpdateBalance(tx, outAccountHistory)
+			err := this.AccountService.UpdateBalance(tx, &outAccountHistory)
 			if err != nil {
 				tx.Rollback()
 				return err
@@ -84,6 +89,8 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string
 			key = tradeNo
 			envelop.AccountId = outAccountHistory.AccountId
 			envelop.CreateTime = outAccountHistory.CreateTime
+			t, _ := strconv.ParseInt(key, 10, 64)
+			envelop.TradeNo = t
 		}
 
 		err:= this.EnvelopDao.Create(tx, envelop)
@@ -97,35 +104,47 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string
 
 		envelopRandomDoubleStrategy.Generate(envelop.Quantity, envelop.Amount, &seeds)
 
-		_, err = redisClient.TxPipeline(func (pipeliner redis.Pipeliner) error {
+		oneDay := 24 * time.Hour
 
-			oneDay,_ := time.ParseDuration("1d")
+		b, err := json.Marshal(outAccountHistory)
 
-			flag, err:= pipeliner.SetNX(this.envelopOrderkey(key), "", oneDay).Result()
-			if flag == false {
-				return &constant.RuntimeError{
-					constant.EnvelopCreateErrorCode,
-					"envelop exists...",
-				}
+		if err !=nil {
+			return &constant.RuntimeError{
+				constant.ConstantErrorCode,
+				"server error",
 			}
+		}
+		k := this.envelopOrderkey(key, envelop.Id)
 
-			if err != nil {
-				return &constant.RuntimeError{
-					constant.EnvelopCreateErrorCode,
-					err.Error(),
-				}
-			}
-
-			cmd := pipeliner.LPush(key, seeds...)
-			if cmd.Err() != nil {
-				return cmd.Err()
-			}
-
-			return nil
-
-		})
+		flag, err := redisClient.Client.SetNX(k, string(b), oneDay).Result()
 
 		if err != nil {
+			return &constant.RuntimeError{
+				constant.EnvelopCreateErrorCode,
+				err.Error(),
+			}
+		}
+
+		if flag == false {
+			return &constant.RuntimeError{
+				constant.EnvelopExistsErrorCode,
+				"envelop already exixts ... ",
+			}
+		}
+
+		res, err:= redisClient.Client.SAdd(this.envelopSetKeyShard(key), envelop.Id).Result()
+
+		if err != nil || res == 0 {
+			return &constant.RuntimeError{
+				constant.EnvelopCreateErrorCode,
+				err.Error(),
+			}
+		}
+
+		res, err = redisClient.Client.LPush(key, seeds...).Result()
+
+
+		if err != nil || res == 0{
 			tx.Rollback()
 			return err
 		}
@@ -137,25 +156,62 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*string
 	})
 
 
-	return &key, err
+	if err != nil {
+		return&models.EnvelopCreateVo{
+			0,
+			"",
+		}, err
+	}
+
+
+	return &models.EnvelopCreateVo{
+		envelop.Id,
+		key,
+	}, err
 
 
 }
 
 
-func (this * EnvelopServiceImpl) envelopOrderkey (envelopTradeNo string) string {
-	return fmt.Sprintf("envelop::%s", envelopTradeNo)
+func (this *EnvelopServiceImpl) envelopOrderkey (envelopTradeNo string, envelopId uint64) string {
+	return fmt.Sprintf("envelop::%s::%d", envelopTradeNo,envelopId)
 }
 
-func (this *EnvelopServiceImpl) TakeEnvelopNew (takeEnvelopVo models.TakeEnvelopVo) (*models.EnvelopDto, error) {
+func (this *EnvelopServiceImpl) envelopSetKeyShard(envelopTradeNo string) string {
+	hash := util.HashCode(&envelopTradeNo)
+	return fmt.Sprintf("envelop::exists::%d", hash % 100)
+}
+
+
+func (this *EnvelopServiceImpl) TakeEnvelopNew (takeEnvelopVo *models.TakeEnvelopVo) (*models.EnvelopItem, error) {
+
+	//从set中判断红包是否存在
+
+	exists, err := this.isEnvelopExists(takeEnvelopVo)
+
+	if exists == false || err != nil {
+		return nil, &constant.RuntimeError{
+			constant.EnvelopNotExistsErrorCode,
+			"envelop not exists...",
+		}
+	}
+
+	outAmoutHistory, err := this.isEnvelopExpire(takeEnvelopVo)
+
+	if err != nil {
+		return nil, err
+	}
+
 
 	//	查找秒杀的key, envelop::${envelopId}::${uid}::take, 如果key存在的话并且 envelop::${envelopId}::${uid}::order存在, 返回订单内容
 	//	如果没找到订单的key, 说明消费队列正在进行订单插入操作, 返回code为xxx, 让前端调用查询红包接口轮训
 
 
+	takeEnvelopVo.OutAccountHistory = outAmoutHistory
+
 	err, order := this.isEnvelopTakeByUser(takeEnvelopVo)
 
-	if err.Code == constant.EnvelopTakePendingErrorCode {
+	if err != nil && err.Code == constant.EnvelopTakePendingErrorCode {
 		return nil, err
 	}
 
@@ -172,17 +228,32 @@ func (this *EnvelopServiceImpl) TakeEnvelopNew (takeEnvelopVo models.TakeEnvelop
 	//	否则直接返回红包抢完
 	err = this.envelopTakeByUser(takeEnvelopVo)
 
-	if err != nil {
-		return nil, err
-	}
-
-
-	return nil, nil
+	return nil, err
 }
 
-func (this *EnvelopServiceImpl) envelopTakeByUser(vo models.TakeEnvelopVo) *constant.RuntimeError {
+func (this *EnvelopServiceImpl) envelopTakeByUser(vo *models.TakeEnvelopVo) *constant.RuntimeError {
+
 	key:=vo.EnvelopTradeNo
-	amount, err := redisClient.Client.LPop(key).Result()
+
+	mins_10:=10 * time.Minute
+
+	res, err :=redisClient.Client.SetNX(this.envelopTakeKey(vo), ENVELOPTAKEPENDING, mins_10).Result()
+
+	if res == false && err != nil {
+		return &constant.RuntimeError{
+			constant.EnvelopTakeRetry,
+			"please retry ... ",
+		}
+	}
+
+	if err != nil {
+		return &constant.RuntimeError{
+			constant.ConstantErrorCode,
+			"server error ... ",
+		}
+	}
+
+	val, err := redisClient.Client.LPop(key).Result()
 	if err != nil {
 		return &constant.RuntimeError{
 			constant.EnvelopRunDownErrorCode,
@@ -190,38 +261,106 @@ func (this *EnvelopServiceImpl) envelopTakeByUser(vo models.TakeEnvelopVo) *cons
 		}
 	}
 
-	producer:=kafka.GetProducerInstance()
 
-	message := &kafka.KafkaMessage{
-		ENVELOPTAKETOPIC,
-		amount,
+	logs.Info("redpacket pop key %s, amount %s", key, val)
+
+	amount, err := strconv.ParseInt(val, 10, 64)
+
+	if err != nil {
+		return &constant.RuntimeError{
+			constant.EnvelopTakeAmountParseErrorCode,
+			"amount parse error",
+		}
 	}
 
-	producer.SendMessage(message, func(result *kafka.Result, e error) {
+	inAccountHistory := new (models.AccountHistory)
+	inAccountHistory.Amount = amount
+	inAccountHistory.UserId = vo.UserId
+	inAccountHistory.GenCreateTime()
+	inAccountHistory.Type = models.AccountHistoryTypeIn
+	inAccountHistory.Channel = models.AccountHistoryChannelPlat
+	inAccountHistory.Pattern = models.AccountHistoryPatternEnvelop
+	inAccountHistory.Currency = vo.OutAccountHistory.Currency
+	tradeNo := inAccountHistory.GenTradeNo()
+	inAccountHistory.TradeNo = tradeNo
+	inAccountHistory.Description = inAccountHistory.GenDescription()
+
+	vo.InAccountHistory = inAccountHistory
+
+
+	bytes, _ := json.Marshal(vo)
+
+	message := &kafka.KafkaMessage{
+		constant.ENVELOPTAKETOPIC,
+		string(bytes),
+	}
+
+	this.AsyncKafkaProducer.SendMessage(message, func(result *kafka.Result, e error) {
 		if e != nil {
 			logs.Error("发送消息失败 ====== 抢红包成功========  用户 %d, 红包 %s, 金额 %s ", result.Topic, vo.EnvelopTradeNo, result.Value)
 
+			var envelopItem models.EnvelopItem
+			envelopItem.Amount = vo.InAccountHistory.Amount
+			envelopItem.EnvelopId = vo.EnvelopId
+			envelopItem.AccountId = vo.InAccountHistory.AccountId
+			envelopItem.UserId = vo.InAccountHistory.UserId
+			envelopItem.CreateTime = time.Now().Unix()
+			envelopItem.Status = constant.ENVELOPITEMSTATUSTAKEFAILED
+			tradeNo, _  := strconv.ParseInt(envelopItem.GenTradeNo(), 10, 64)
+			envelopItem.TradeNo = tradeNo
+			this.EnvelopItemDao.Tx(func(tx *sql.Tx) error {
+				res, err := this.EnvelopItemDao.Create(tx, &envelopItem)
+				if err != nil || res == 0 {
+					logs.Error("insert envelop item for status = take-failed failed, accountId %d, envelopId %d  ", envelopItem.AccountId, envelopItem.EnvelopId)
+				}else {
+					logs.Info("insert envelop item for status = take-failed success, accountId %d, envelopId %d  ", envelopItem.AccountId, envelopItem.EnvelopId)
+				}
+				return err
+			})
+
+			//把红包金额重新放回去
 		} else {
 			logs.Info("发送消息成功 ====== 抢红包成功========  用户 %d, 红包 %s, 金额 %s ", result.Topic, vo.EnvelopTradeNo, result.Value)
 		}
 	})
 
-	return nil
+	return &constant.RuntimeError{
+		constant.EnvelopTakePendingErrorCode,
+		"envelop take pending",
+	}
+
+	return &constant.RuntimeError{
+		constant.EnvelopTakeRetry,
+		"please retry",
+	}
 }
 
+func (this *EnvelopServiceImpl) envelopTakeKey (takeEnvelopVo *models.TakeEnvelopVo) string {
+	return fmt.Sprintf("envelop::%s::%d::take", takeEnvelopVo.EnvelopTradeNo, takeEnvelopVo.UserId)
+}
 
-func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo models.TakeEnvelopVo) (*constant.RuntimeError, *models.EnvelopDto) {
-	key := fmt.Sprint("envelop::%s::%d::take", takeEnvelopVo.EnvelopTradeNo, takeEnvelopVo.UserId)
+func (this *EnvelopServiceImpl) PutEnvelopOrderRedis (takeEnvelopVo *models.TakeEnvelopVo, item *models.EnvelopItem)  error {
+	key:= this.envelopTakeKey(takeEnvelopVo)
+	bytes, _:= json.Marshal(item)
+	day_7 := 7 * 24 * time.Hour
+	_, err:= redisClient.Client.Set(key, string(bytes), day_7).Result()
+	return err
+}
+
+func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo *models.TakeEnvelopVo) (*constant.RuntimeError, *models.EnvelopItem) {
+	key := this.envelopTakeKey(takeEnvelopVo)
 	order, err:= redisClient.Client.Get(key).Result()
+
+	if err == redis.Nil {
+		return nil, nil
+	}
+
+
 	if err != nil {
 		return &constant.RuntimeError{
 			constant.ConstantErrorCode,
 			err.Error(),
 		}, nil
-	}
-
-	if len(order) == 0 {
-		return nil , nil
 	}
 
 	if order == ENVELOPTAKEPENDING {
@@ -231,7 +370,7 @@ func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo models.TakeEnv
 		}, nil
 	} else {
 		orderJsonByte:= []byte(order)
-		model:=&models.EnvelopDto{}
+		model:=&models.EnvelopItem{}
 		json.Unmarshal(orderJsonByte, model)
 		return nil, model
 	}
@@ -243,7 +382,7 @@ func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo models.TakeEnv
 func (this *EnvelopServiceImpl) TakeEnvelop (takeEnvelopVo models.TakeEnvelopVo) (*models.EnvelopDto, error) {
 
 	//判断是否已经抢过红包
-	envelopOrdersKey := takeEnvelopVo.EnvelopTradeNo + "-" + "order-" + strconv.FormatUint(takeEnvelopVo.UserId, 10)
+	envelopOrdersKey := takeEnvelopVo.EnvelopTradeNo + "::" + "order::" + strconv.FormatUint(takeEnvelopVo.UserId, 10)
 
 	order, _ := redisClient.Client.Get(envelopOrdersKey).Result()
 
@@ -398,6 +537,96 @@ func (this *EnvelopServiceImpl) resetEnvelopMoney(EnvelopTradeNo string, Amount 
 	})
 
 	return err
+}
+func (this *EnvelopServiceImpl) isEnvelopExists(vo *models.TakeEnvelopVo) (bool, *constant.RuntimeError) {
+	key := this.envelopSetKeyShard(vo.EnvelopTradeNo)
+	res, err:= redisClient.Client.SIsMember(key, vo.EnvelopId).Result()
+	if err != nil {
+		return false, &constant.RuntimeError{
+			constant.ConstantErrorCode,
+			"server redis error..",
+		}
+	}
+	return res, nil
+}
+func (this *EnvelopServiceImpl) isEnvelopExpire(vo *models.TakeEnvelopVo) (*models.AccountHistory, *constant.RuntimeError) {
+	//从redis中拿出红包, 如果红包不存在, 说明红包过期了, 需要前端调查询红包接口详情
+	amountStr, err := redisClient.Client.Get(this.envelopOrderkey(vo.EnvelopTradeNo, vo.EnvelopId)).Result()
+
+	if err == redis.Nil {
+		return nil, &constant.RuntimeError{
+			constant.EnvelopExpireErrorCode,
+			"envelop expire ... ",
+		}
+	}
+
+	if err != nil {
+		return nil, &constant.RuntimeError{
+			constant.ConstantErrorCode,
+			"server redis error..",
+		}
+	}
+
+	var history models.AccountHistory
+
+
+	err = json.Unmarshal([]byte(amountStr), &history)
+
+	if err != nil {
+		return nil, &constant.RuntimeError{
+			constant.ConstantErrorCode,
+			"json parse error..",
+		}
+	}
+
+	return &history, nil
+
+}
+
+
+func (this *EnvelopServiceImpl) TakeEnvelopByUser(tx *sql.Tx, vo models.TakeEnvelopVo) (*models.EnvelopItem, error) {
+
+	var envelopItem models.EnvelopItem
+
+	envelopItem.Amount = vo.InAccountHistory.Amount
+	envelopItem.EnvelopId = vo.EnvelopId
+	envelopItem.AccountId = vo.InAccountHistory.AccountId
+	envelopItem.UserId = vo.InAccountHistory.UserId
+	envelopItem.CreateTime = time.Now().Unix()
+	envelopItem.Status = constant.ENVELOPITEMSTATUSTAKE
+	tradeNo, _  := strconv.ParseInt(envelopItem.GenTradeNo(), 10, 64)
+	envelopItem.TradeNo = tradeNo
+	res, err := this.EnvelopItemDao.Create(tx, &envelopItem)
+
+	logs.Info("insert envelop item, rows %d, err %v", res, err)
+
+	if err != nil {
+		return nil, err
+	}
+	if res == 0 {
+		return nil, &constant.RuntimeError{
+			constant.EnvelopItemCreateErrorCode,
+			"envelop item create failed",
+		}
+	}
+
+
+	res, err = this.EnvelopDao.ReduceQuantity(tx,envelopItem.EnvelopId )
+
+	logs.Info("update envelop quantity, rows %d, err %v", res, err)
+
+	if err != nil {
+		return nil, err
+	}
+	if res == 0 {
+		return nil, &constant.RuntimeError{
+			constant.EnvelopItemCreateErrorCode,
+			"envelop quantity update failed",
+		}
+	}
+
+	return &envelopItem ,nil
+
 }
 
 

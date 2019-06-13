@@ -7,7 +7,7 @@ import (
 	"envelop/redis"
 	"fmt"
 	"github.com/astaxie/beego/logs"
-	"github.com/facebookgo/inject"
+	"github.com/facebookarchive/inject"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -78,6 +78,7 @@ func MustInit (g *inject.Graph) {
 		&inject.Object{Value: &AccountHistoryDaoImpl{}},
 		&inject.Object{Value: &AccountBankTransferHistoryDaoImpl{}},
 		&inject.Object{Value: &EnvelopDaoImpl{}},
+		&inject.Object{Value: &EnvelopItemDaoImpl{}},
 		)
 }
 
@@ -203,6 +204,7 @@ type SQLInsert struct {
 	Prepare string
 	Args[] interface{}
 	Error constant.RuntimeError
+	LastInsertId int64
 }
 
 
@@ -219,6 +221,10 @@ func (this *BaseDao) Insert (sqlInsert *SQLInsert) (int64, error) {
 		return 0, &sqlInsert.Error
 	}
 	rows,_:= res.RowsAffected()
+	if rows > 0 {
+		lastInsertId, _ := res.LastInsertId()
+		sqlInsert.LastInsertId = lastInsertId
+	}
 	return rows, nil
 }
 
@@ -325,15 +331,14 @@ func (this *AccountHistoryDaoImpl) CreateAccountHistory (tx *sql.Tx, history* mo
 
 	args=append(args, history.UserId, history.AccountId, history.TradeNo, history.CreateTime, history.Type, history.Channel, history.Currency, history.Amount, history.Pattern, history.Description)
 	sqlInsert := SQLInsert{
-		tx,
-		sql,
-		args,
-		constant.RuntimeError{
+		Tx: tx,
+		Prepare: sql,
+		Args: args,
+		Error: constant.RuntimeError{
 					constant.AccountBalanceErrorCode,
 					"account_log insert failed ...",
 		 },
 	}
-
 
 	return this.Insert(&sqlInsert)
 
@@ -344,6 +349,7 @@ func (this *AccountHistoryDaoImpl) CreateAccountHistory (tx *sql.Tx, history* mo
 
 type EnvelopDao interface {
 	Create (tx *sql.Tx, envelop *models.Envelop) (error)
+	ReduceQuantity(tx *sql.Tx, id uint64) (int64, error)
 }
 
 type EnvelopDaoImpl struct {
@@ -355,17 +361,17 @@ func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (error
 	//db:= orm.Create(envelop)
 	//return db.RowsAffected, db.Error
 
-	sql:= "insert into envelop (user_id, account_id, create_time, amount, type, quantity, version, pay_channel) values" +
-		"(?,?,?,?,?,?,?,?);"
+	sql:= "insert into envelop (user_id, account_id, create_time, amount, type, quantity, version, pay_channel, trade_no) values" +
+		"(?,?,?,?,?,?,?,?,?);"
 
 	args:=make([]interface{}, 0)
 
-	args=append(args, envelop.UserId, envelop.AccountId, envelop.CreateTime, envelop.Amount, envelop.Type, envelop.Quantity, envelop.Version, envelop.PayChannel)
+	args=append(args, envelop.UserId, envelop.AccountId, envelop.CreateTime, envelop.Amount, envelop.Type, envelop.Quantity, envelop.Version, envelop.PayChannel, envelop.TradeNo)
 	sqlInsert := SQLInsert{
-		tx,
-		sql,
-		args,
-		constant.RuntimeError{
+		Tx: tx,
+		Prepare: sql,
+		Args: args,
+		Error: constant.RuntimeError{
 			constant.EnvelopCreateErrorCode,
 			"envelop create failed ... ",
 		},
@@ -381,7 +387,29 @@ func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (error
 		}
 	}
 
+	envelop.Id = uint64(sqlInsert.LastInsertId)
+
 	return err
+}
+
+func (this * EnvelopDaoImpl) ReduceQuantity (tx *sql.Tx, id uint64) (int64, error) {
+
+	sql := "update envelop set quantity = quantity - 1 where id = ? and quantity >= 1;"
+
+	stmt, error := tx.Prepare(sql)
+	if error != nil {
+		return 0, error
+	}
+	res, error := stmt.Exec(id)
+	if error != nil {
+		return 0, &constant.RuntimeError{
+			constant.AccountBalanceErrorCode,
+			"update failed",
+		}
+	}
+	rows, _ :=res.RowsAffected()
+	return rows, error
+
 }
 
 
@@ -406,10 +434,10 @@ func (this * AccountBankTransferHistoryDaoImpl) Create (tx *sql.Tx, history *mod
 
 	args=append(args, history.TradeNo, history.InAccountId, history.OutAccountId, history.BankNo, history.BankCode, history.BankName, history.CreateTime, history.Amount)
 	sqlInsert := SQLInsert{
-		tx,
-		sql,
-		args,
-		constant.RuntimeError{
+		Tx: tx,
+		Prepare :sql,
+		Args: args,
+		Error: constant.RuntimeError{
 			constant.AccountBalanceErrorCode,
 			"bank hisotry create failed",
 		},
@@ -420,10 +448,43 @@ func (this * AccountBankTransferHistoryDaoImpl) Create (tx *sql.Tx, history *mod
 }
 
 
+type EnvelopItemDao interface {
+	Create(tx *sql.Tx, item *models.EnvelopItem) (int64, error)
+}
+
+type EnvelopItemDaoImpl struct {
+	BaseDao
+}
 
 
 
+func (this * EnvelopItemDaoImpl) Create (tx *sql.Tx, item *models.EnvelopItem) (int64, error) {
+	//orm:= this.GetPool().orm
+	//db:= orm.Create(envelop)
+	//return db.RowsAffected, db.Error
 
+	sql:= "insert into envelop_item (user_id, account_id, envelop_id, amount, create_time, status, trade_no) values" +
+		"(?,?,?,?,?,?,?);"
+
+	args:=make([]interface{}, 0)
+
+	args=append(args, item.UserId, item.AccountId, item.EnvelopId, item.Amount, item.CreateTime, item.Status, item.TradeNo)
+	sqlInsert := SQLInsert{
+		Tx: tx,
+		Prepare :sql,
+		Args: args,
+		Error: constant.RuntimeError{
+			constant.EnvelopItemCreateErrorCode,
+			"envelop item create failed",
+		},
+	}
+
+	res, err :=this.Insert(&sqlInsert)
+
+	item.Id = uint64(sqlInsert.LastInsertId)
+
+	return res, err
+}
 
 
 

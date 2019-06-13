@@ -11,6 +11,11 @@ const (
 	EnvelopNotExistsErrorCode = 902 //红包不存在
 	EnvelopTakePendingErrorCode = 961 //红包抢到了, 但是正在入库, 需要前端调用查询红包接口
 	EnvelopRunDownErrorCode = 971 //红包抢完了
+	EnvelopTakeAmountParseErrorCode = 981 //红包数值转换出错
+	EnvelopExpireErrorCode = 904 //红包过期
+	EnvelopItemCreateErrorCode  = 942 //红包订单创建失败
+	EnvelopExistsErrorCode = 977 //红包存在
+	EnvelopTakeRetry = 999 //重试抢红包
 )
 
 

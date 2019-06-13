@@ -12,3 +12,4 @@ import:
   version: ~1.22.1
 - package: github.com/bsm/sarama-cluster
   version: ~2.1.15
+- package: github.com/facebookarchive/inject
