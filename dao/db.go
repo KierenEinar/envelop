@@ -361,12 +361,12 @@ func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (error
 	//db:= orm.Create(envelop)
 	//return db.RowsAffected, db.Error
 
-	sql:= "insert into envelop (user_id, account_id, create_time, amount, type, quantity, version, pay_channel, trade_no) values" +
-		"(?,?,?,?,?,?,?,?,?);"
+	sql:= "insert into envelop (user_id, account_id, create_time, amount, type, quantity, version, pay_channel, trade_no, remaining_amount) values" +
+		"(?,?,?,?,?,?,?,?,?,?);"
 
 	args:=make([]interface{}, 0)
 
-	args=append(args, envelop.UserId, envelop.AccountId, envelop.CreateTime, envelop.Amount, envelop.Type, envelop.Quantity, envelop.Version, envelop.PayChannel, envelop.TradeNo)
+	args=append(args, envelop.UserId, envelop.AccountId, envelop.CreateTime, envelop.Amount, envelop.Type, envelop.Quantity, envelop.Version, envelop.PayChannel, envelop.TradeNo, envelop.RemainingAmount)
 	sqlInsert := SQLInsert{
 		Tx: tx,
 		Prepare: sql,
@@ -392,15 +392,15 @@ func (this * EnvelopDaoImpl) Create (tx *sql.Tx, envelop *models.Envelop) (error
 	return err
 }
 
-func (this * EnvelopDaoImpl) ReduceQuantity (tx *sql.Tx, id uint64) (int64, error) {
+func (this * EnvelopDaoImpl) ReduceQuantityAndRemainingAmount (tx *sql.Tx, id uint64, amount int64) (int64, error) {
 
-	sql := "update envelop set quantity = quantity - 1 where id = ? and quantity >= 1;"
+	sql := "update envelop set quantity = quantity - 1, remaining_amount = remaining_amount - ? where id = ? and quantity >= 1 and remaining_amount >= ?;"
 
 	stmt, error := tx.Prepare(sql)
 	if error != nil {
 		return 0, error
 	}
-	res, error := stmt.Exec(id)
+	res, error := stmt.Exec(amount, id, amount)
 	if error != nil {
 		return 0, &constant.RuntimeError{
 			constant.AccountBalanceErrorCode,

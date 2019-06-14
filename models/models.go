@@ -87,11 +87,12 @@ type Envelop struct {
 	AccountId uint64
 	Amount int64 `valid:"Required;"`
 	Type string `enum: "AVG, RAND" valid:"Required"`
-	Quantity int64 `valid: "Required"`
+	Quantity uint8 `valid: "Required"`
 	Version uint64
 	PayChannel string `valid: "Required"`
 	Currency string `valid:"Required"`
 	TradeNo int64
+	RemainingAmount uint64
 }
 
 type EnvelopItem struct {
@@ -122,7 +123,7 @@ func (this *Envelop) Valid (v *validation.Validation) {
 		v.SetError("Quantity", "Quantity error")
 	}
 
-	if this.Amount / this.Quantity < 1 {
+	if uint64(this.Amount) / uint64(this.Quantity) < 1 {
 		logs.Error("Amount divide Quantity error")
 		v.SetError("Amount / Quantity", "Amount / Quantity error")
 	}

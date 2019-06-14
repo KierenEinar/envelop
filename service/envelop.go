@@ -70,7 +70,7 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models
 	err = this.EnvelopDao.Tx(func(tx *sql.Tx) error {
 
 		if envelop.PayChannel == models.AccountHistoryChannelPlat {
-			outAccountHistory.Amount = 0 - envelop.Amount
+			outAccountHistory.Amount = (int64)(0 - envelop.Amount)
 			outAccountHistory.UserId = envelop.UserId
 			outAccountHistory.GenCreateTime()
 			outAccountHistory.Type = models.AccountHistoryTypeOut
@@ -91,6 +91,7 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models
 			envelop.CreateTime = outAccountHistory.CreateTime
 			t, _ := strconv.ParseInt(key, 10, 64)
 			envelop.TradeNo = t
+			envelop.RemainingAmount = uint64(envelop.Amount)
 		}
 
 		err:= this.EnvelopDao.Create(tx, envelop)
@@ -102,7 +103,7 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models
 
 		seeds := make([]interface{}, 0)
 
-		envelopRandomDoubleStrategy.Generate(envelop.Quantity, envelop.Amount, &seeds)
+		envelopRandomDoubleStrategy.Generate(int64(envelop.Quantity), envelop.Amount, &seeds)
 
 		oneDay := 24 * time.Hour
 
@@ -611,7 +612,7 @@ func (this *EnvelopServiceImpl) TakeEnvelopByUser(tx *sql.Tx, vo models.TakeEnve
 	}
 
 
-	res, err = this.EnvelopDao.ReduceQuantity(tx,envelopItem.EnvelopId )
+	res, err = this.EnvelopDao.ReduceQuantityAndRemainingAmount(tx,	envelopItem.EnvelopId, envelopItem.Amount)
 
 	logs.Info("update envelop quantity, rows %d, err %v", res, err)
 
