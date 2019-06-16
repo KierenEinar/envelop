@@ -30,6 +30,14 @@ func (this * EnvelopController) Take () {
 	this.apiResponse(0, err, envelop)
 }
 
+// @router /query [post]
+func (this * EnvelopController) Query () {
+	var queryEnvelopVo models.QueryEnvelopVo
+	json.Unmarshal(this.Ctx.Input.RequestBody, &queryEnvelopVo)
+	envelop, err:= this.EnvelopService.QueryEnvelop(&queryEnvelopVo)
+	this.apiResponse(0, err, envelop)
+}
+
 
 // @router /test [get]
 func (this *EnvelopController) TestRandomAlog () {

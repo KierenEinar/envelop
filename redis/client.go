@@ -1,6 +1,7 @@
 package redis
 
 import (
+	conf2 "envelop/conf"
 	"github.com/astaxie/beego/logs"
 	"github.com/go-redis/redis"
 )
@@ -10,8 +11,11 @@ var (
 )
 
 func init () {
+
+	conf:=conf2.GetInstance().RedisConfig
+
 	opt := redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     conf.Addr,
 		PoolSize: 100,
 		DB: 0,
 	}

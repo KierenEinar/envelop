@@ -1,13 +1,17 @@
 package kafka
 
 import (
+	"envelop/conf"
 	"github.com/astaxie/beego/logs"
 	"github.com/facebookarchive/inject"
 )
 
 func MustInit (g *inject.Graph) {
+
+	config:= conf.GetInstance().KafkaConfig
+
 	kafkaConfig:= &KafkaConfig{
-		Address: []string{"localhost:9092"},
+		Address: config.Addr,
 	}
 
 	producer := GetProducerInstance()

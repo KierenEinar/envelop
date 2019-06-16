@@ -16,6 +16,61 @@ const (
 	EnvelopItemCreateErrorCode  = 942 //红包订单创建失败
 	EnvelopExistsErrorCode = 977 //红包存在
 	EnvelopTakeRetry = 999 //重试抢红包
+	EnvelopNotTakeByUserErrorCode = 991
+)
+
+var (
+
+	EnvelopExistsError = &RuntimeError{
+		EnvelopExistsErrorCode,
+		"envelop already exixts ... ",
+	}
+
+	ParamError = &RuntimeError{
+		ParamErrorCode,
+	 	"param error",
+	}
+
+	ServerError = &RuntimeError{
+		ConstantErrorCode,
+		"server error",
+	}
+
+	EnvelopCreateError = &RuntimeError{
+		EnvelopCreateErrorCode,
+		"envelop create error",
+	}
+
+	EnvelopNotExists = &RuntimeError{
+		EnvelopNotExistsErrorCode,
+		"envelop not exists...",
+	}
+
+	EnvelopTakeRetryError = &RuntimeError{
+		EnvelopTakeRetry,
+		"please retry ... ",
+	}
+
+	EnvelopRunDown = &RuntimeError{
+		EnvelopRunDownErrorCode,
+		"envelop run down ... ",
+	}
+
+	EnvelopTakePending = &RuntimeError{
+		EnvelopTakePendingErrorCode,
+		"envelop take pending",
+	}
+
+	EnvelopItemCreateError = &RuntimeError{
+		EnvelopItemCreateErrorCode,
+		"envelop item create failed",
+	}
+
+	EnvelopNotTakeByUserError = &RuntimeError{
+		EnvelopNotTakeByUserErrorCode,
+		"envelop not take by user",
+	}
+
 )
 
 
@@ -27,7 +82,6 @@ type RuntimeError struct {
 func (this * RuntimeError) Error() string {
 	return this.Err
 }
-
 
 
 

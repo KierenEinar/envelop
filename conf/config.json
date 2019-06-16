@@ -1,0 +1,19 @@
+{
+  "mysql":{
+    "url":"tcp(127.0.0.1:3306)/envelop_db",
+    "user":"root",
+    "pass":"root"
+  },
+  "redis":{
+    "addr":"127.0.0.1:6379"
+  },
+  "kafka": {
+    "addr": ["localhost:9092"],
+    "producer":{
+
+    },
+    "consumer":{
+      "groupId":"envelop-group"
+    }
+  }
+}

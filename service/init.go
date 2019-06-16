@@ -1,6 +1,7 @@
 package service
 
 import (
+	"envelop/conf"
 	"envelop/constant"
 	"envelop/infra/kafka"
 	"github.com/astaxie/beego/logs"
@@ -34,10 +35,12 @@ func initConsumer (g *inject.Graph) {
 
 	var envelopTakeListener EnvelopTakeListener
 
+	config:= conf.GetInstance().KafkaConfig
+
 	container:= kafka.ConcumerContainer{
 		ConsumerConfig:kafka.ConsumerConfig{
-			Address: []string{"localhost:9092"},
-			GroupId: "envelop-group",
+			Address: config.Addr,
+			GroupId: config.ConsumerConfig.GroupId,
 			Topic: constant.ENVELOPTAKETOPIC,
 		},
 		MessageListener: &envelopTakeListener,

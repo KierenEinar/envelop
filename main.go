@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "envelop/conf"
 	"envelop/controllers"
 	"envelop/dao"
 	"envelop/routers"

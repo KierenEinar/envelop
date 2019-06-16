@@ -20,12 +20,14 @@ import (
 
 const (
 	ENVELOPTAKEPENDING = "pending"
+	ENVELOPTAKEFAILED = "take failed"
 )
 
 type EnvelopService interface {
-	CreateEnvelop (envelop * models.Envelop) (uint64, string, error) //发红包
+	CreateEnvelop (* models.Envelop) (*models.EnvelopCreateVo, error) //发红包
 	TakeEnvelop (models.TakeEnvelopVo) (*models.EnvelopDto, error) //抢红包
-	TakeEnvelopNew (models.TakeEnvelopVo) (*models.EnvelopDto, error) //抢红包, 新版本
+	TakeEnvelopNew (*models.TakeEnvelopVo) (*models.EnvelopItem, error) //抢红包, 新版本
+	QueryEnvelop (*models.QueryEnvelopVo) (*models.EnvelopItem, error) //查询红包
 }
 
 var (
@@ -57,10 +59,7 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models
 		return &models.EnvelopCreateVo{
 			0,
 			"",
-		}, &constant.RuntimeError{
-			constant.ParamErrorCode,
-			"param error",
-		}
+		}, constant.ParamError
 	}
 
 	var key string
@@ -110,36 +109,24 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models
 		b, err := json.Marshal(outAccountHistory)
 
 		if err !=nil {
-			return &constant.RuntimeError{
-				constant.ConstantErrorCode,
-				"server error",
-			}
+			return constant.ServerError
 		}
 		k := this.envelopOrderkey(key, envelop.Id)
 
 		flag, err := redisClient.Client.SetNX(k, string(b), oneDay).Result()
 
 		if err != nil {
-			return &constant.RuntimeError{
-				constant.EnvelopCreateErrorCode,
-				err.Error(),
-			}
+			return constant.EnvelopCreateError
 		}
 
 		if flag == false {
-			return &constant.RuntimeError{
-				constant.EnvelopExistsErrorCode,
-				"envelop already exixts ... ",
-			}
+			return constant.EnvelopExistsError
 		}
 
 		res, err:= redisClient.Client.SAdd(this.envelopSetKeyShard(key), envelop.Id).Result()
 
 		if err != nil || res == 0 {
-			return &constant.RuntimeError{
-				constant.EnvelopCreateErrorCode,
-				err.Error(),
-			}
+			return constant.EnvelopCreateError
 		}
 
 		res, err = redisClient.Client.LPush(key, seeds...).Result()
@@ -175,7 +162,7 @@ func (this *EnvelopServiceImpl) CreateEnvelop(envelop * models.Envelop) (*models
 
 
 func (this *EnvelopServiceImpl) envelopOrderkey (envelopTradeNo string, envelopId uint64) string {
-	return fmt.Sprintf("envelop::%s::%d", envelopTradeNo,envelopId)
+	return fmt.Sprintf("envelop::%s::%d", envelopTradeNo, envelopId)
 }
 
 func (this *EnvelopServiceImpl) envelopSetKeyShard(envelopTradeNo string) string {
@@ -191,10 +178,7 @@ func (this *EnvelopServiceImpl) TakeEnvelopNew (takeEnvelopVo *models.TakeEnvelo
 	exists, err := this.isEnvelopExists(takeEnvelopVo)
 
 	if exists == false || err != nil {
-		return nil, &constant.RuntimeError{
-			constant.EnvelopNotExistsErrorCode,
-			"envelop not exists...",
-		}
+		return nil, constant.EnvelopNotExists
 	}
 
 	outAmoutHistory, err := this.isEnvelopExpire(takeEnvelopVo)
@@ -210,7 +194,7 @@ func (this *EnvelopServiceImpl) TakeEnvelopNew (takeEnvelopVo *models.TakeEnvelo
 
 	takeEnvelopVo.OutAccountHistory = outAmoutHistory
 
-	err, order := this.isEnvelopTakeByUser(takeEnvelopVo)
+	order, err := this.isEnvelopTakeByUser(takeEnvelopVo)
 
 	if err != nil && err.Code == constant.EnvelopTakePendingErrorCode {
 		return nil, err
@@ -241,25 +225,16 @@ func (this *EnvelopServiceImpl) envelopTakeByUser(vo *models.TakeEnvelopVo) *con
 	res, err :=redisClient.Client.SetNX(this.envelopTakeKey(vo), ENVELOPTAKEPENDING, mins_10).Result()
 
 	if res == false && err != nil {
-		return &constant.RuntimeError{
-			constant.EnvelopTakeRetry,
-			"please retry ... ",
-		}
+		return constant.EnvelopTakeRetryError
 	}
 
 	if err != nil {
-		return &constant.RuntimeError{
-			constant.ConstantErrorCode,
-			"server error ... ",
-		}
+		return constant.ServerError
 	}
 
 	val, err := redisClient.Client.LPop(key).Result()
 	if err != nil {
-		return &constant.RuntimeError{
-			constant.EnvelopRunDownErrorCode,
-			"envelop run down ... ",
-		}
+		return constant.EnvelopRunDown
 	}
 
 
@@ -325,15 +300,9 @@ func (this *EnvelopServiceImpl) envelopTakeByUser(vo *models.TakeEnvelopVo) *con
 		}
 	})
 
-	return &constant.RuntimeError{
-		constant.EnvelopTakePendingErrorCode,
-		"envelop take pending",
-	}
+	return constant.EnvelopTakePending
 
-	return &constant.RuntimeError{
-		constant.EnvelopTakeRetry,
-		"please retry",
-	}
+	return constant.EnvelopTakeRetryError
 }
 
 func (this *EnvelopServiceImpl) envelopTakeKey (takeEnvelopVo *models.TakeEnvelopVo) string {
@@ -348,7 +317,7 @@ func (this *EnvelopServiceImpl) PutEnvelopOrderRedis (takeEnvelopVo *models.Take
 	return err
 }
 
-func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo *models.TakeEnvelopVo) (*constant.RuntimeError, *models.EnvelopItem) {
+func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo *models.TakeEnvelopVo) ( *models.EnvelopItem, *constant.RuntimeError) {
 	key := this.envelopTakeKey(takeEnvelopVo)
 	order, err:= redisClient.Client.Get(key).Result()
 
@@ -358,22 +327,18 @@ func (this *EnvelopServiceImpl) isEnvelopTakeByUser(takeEnvelopVo *models.TakeEn
 
 
 	if err != nil {
-		return &constant.RuntimeError{
-			constant.ConstantErrorCode,
-			err.Error(),
-		}, nil
+		return nil, constant.ServerError
 	}
 
 	if order == ENVELOPTAKEPENDING {
-		return &constant.RuntimeError{
-			constant.EnvelopTakePendingErrorCode,
-			"envelop take pending",
-		}, nil
+		return  nil, constant.EnvelopTakePending
+	} else if order == ENVELOPTAKEFAILED {
+		return nil, constant.EnvelopNotTakeByUserError
 	} else {
 		orderJsonByte:= []byte(order)
 		model:=&models.EnvelopItem{}
 		json.Unmarshal(orderJsonByte, model)
-		return nil, model
+		return model, nil
 	}
 }
 
@@ -605,10 +570,7 @@ func (this *EnvelopServiceImpl) TakeEnvelopByUser(tx *sql.Tx, vo models.TakeEnve
 		return nil, err
 	}
 	if res == 0 {
-		return nil, &constant.RuntimeError{
-			constant.EnvelopItemCreateErrorCode,
-			"envelop item create failed",
-		}
+		return nil, constant.EnvelopItemCreateError
 	}
 
 
@@ -620,10 +582,7 @@ func (this *EnvelopServiceImpl) TakeEnvelopByUser(tx *sql.Tx, vo models.TakeEnve
 		return nil, err
 	}
 	if res == 0 {
-		return nil, &constant.RuntimeError{
-			constant.EnvelopItemCreateErrorCode,
-			"envelop quantity update failed",
-		}
+		return nil, constant.EnvelopItemCreateError
 	}
 
 	return &envelopItem ,nil
@@ -631,3 +590,107 @@ func (this *EnvelopServiceImpl) TakeEnvelopByUser(tx *sql.Tx, vo models.TakeEnve
 }
 
 
+func (this *EnvelopServiceImpl) QueryEnvelop (vo *models.QueryEnvelopVo) (*models.EnvelopItem, error) {
+
+	takeEnvelopVo := &models.TakeEnvelopVo{
+		UserId:	vo.UserId,
+		EnvelopId:	vo.EnvelopId,
+		EnvelopTradeNo:	vo.EnvelopTradeNo,
+	}
+
+	exists, err := this.isEnvelopExists(takeEnvelopVo)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if exists == false {
+		return nil, constant.EnvelopNotExists
+	}
+
+	//在redis查询红包的订单信息
+
+	//如果红包没有过期, 说明用户没有抢到红包
+
+	//如果红包已经过期, 则从mysql中查询并放回redis
+
+	order, err := this.isEnvelopTakeByUser(takeEnvelopVo)
+
+	if err != nil && err.Code == constant.EnvelopTakePendingErrorCode {
+		return nil, err
+	}
+
+	if err != nil && err.Code == constant.EnvelopNotTakeByUserErrorCode {
+		return nil ,err
+	}
+
+	if order != nil {
+		return order, nil
+	}
+
+	const retryCount int = 50
+
+	for i:=0; i<retryCount; i++ {
+
+		res, err:= this.tryQueryEnvelopItemByMysql(takeEnvelopVo)
+
+		if err != nil {
+			return nil ,err
+		}
+
+		if res != nil {
+			return res, nil
+		}
+
+		sleep:= time.Millisecond * 500
+
+		time.Sleep(sleep)
+
+	}
+
+	return nil, constant.EnvelopNotTakeByUserError
+}
+
+func (this *EnvelopServiceImpl) tryQueryEnvelopItemByMysql (vo *models.TakeEnvelopVo) (*models.EnvelopItem, error) {
+
+	res, err := this.tryLockQueryEnvelopItem(vo)
+
+	if res == true {
+		item, err := this.EnvelopItemDao.SelectByEnvelopIdAndUserId(vo)
+		if item == nil {
+			key := this.envelopTakeKey(vo)
+			duration := 10 * time.Second
+			redisClient.Client.SetNX(key, ENVELOPTAKEFAILED, duration)
+			return nil, constant.EnvelopNotTakeByUserError
+		}
+		err = this.PutEnvelopOrderRedis(vo, item)
+
+		if err != nil {
+			return item, err
+		}
+	}
+
+	return nil, err
+
+}
+
+func (this * EnvelopServiceImpl) tryLockQueryEnvelopItem(vo *models.TakeEnvelopVo) (bool, error) {
+
+	key := fmt.Sprintf("lock::envelop::item::%d::uid::%d", vo.EnvelopId, vo.UserId)
+
+	secondsOfTwo := 5 * time.Second
+
+	res, err:= redisClient.Client.SetNX(key, time.Now().Unix(), secondsOfTwo).Result()
+
+	if err != nil {
+		logs.Info("redis set nx failed, key %s, err %v", key, err)
+		return false, constant.ServerError
+	}
+
+	if res == false {
+		return res, nil
+	}
+
+	return true, nil
+
+}

@@ -105,6 +105,10 @@ type EnvelopItem struct {
 	TradeNo int64   `gorm:"column:trade_no"`
 }
 
+func (*EnvelopItem) TableName() string {
+	return "envelop_item"
+}
+
 
 
 func (this *Envelop) Valid (v *validation.Validation) {

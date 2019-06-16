@@ -36,6 +36,12 @@ type TakeEnvelopVo struct {
 	InAccountHistory *AccountHistory
 }
 
+type QueryEnvelopVo struct {
+	EnvelopTradeNo string `valid:"Required"`
+	EnvelopId uint64  `valid:"Required"`
+	UserId uint64  `valid:"Required"`
+}
+
 type EnvelopDto struct {
 	TakeEnvelopVo
 	Amount int64

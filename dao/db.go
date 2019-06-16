@@ -2,6 +2,7 @@ package dao
 
 import (
 	"database/sql"
+	"envelop/conf"
 	"envelop/constant"
 	"envelop/models"
 	"envelop/redis"
@@ -86,9 +87,11 @@ func (this * DataSourceManager) initDataSource () error {
 
 	dataSource := new (DataSource)
 
-	dataSource.Register("tcp(127.0.0.1:3306)/envelop_db",
-		"root",
-		"root",
+	config:= conf.GetInstance().MysqlConfig
+
+	dataSource.Register(config.Url,
+		config.User,
+		config.Pass,
 		"mysql",
 		16,
 		200,
@@ -484,6 +487,24 @@ func (this * EnvelopItemDaoImpl) Create (tx *sql.Tx, item *models.EnvelopItem) (
 	item.Id = uint64(sqlInsert.LastInsertId)
 
 	return res, err
+}
+
+func (this *EnvelopItemDaoImpl) SelectByEnvelopIdAndUserId(vo *models.TakeEnvelopVo) (*models.EnvelopItem, error) {
+
+	var item models.EnvelopItem
+
+	db := this.GetPool().orm.Where("user_id = ? and envelop_id = ?", vo.UserId, vo.EnvelopId).First(&item)
+
+	if db.Error == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+
+	if db.Error != nil {
+		return nil, db.Error
+	}
+
+	return &item, nil
+
 }
 
 
